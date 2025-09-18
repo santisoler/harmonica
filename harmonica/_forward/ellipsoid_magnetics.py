@@ -26,8 +26,9 @@ from .utils_ellipsoids import (
 def ellipsoid_magnetics(
     coordinates,
     ellipsoids,
-    susceptibilities,
-    external_field,
+    *,
+    susceptibilities=None,
+    external_field=None,
     remnant_mag=None,
     field="b",
 ):
@@ -43,24 +44,25 @@ def ellipsoid_magnetics(
         List of arrays containing the ``easting``, ``northing`` and ``upward``
         coordinates of the computation points defined on a Cartesian coordinate
         system. All coordinates should be in meters.
-    ellipsoid : ellipsoid or list of ellipsoids
+    ellipsoids : ellipsoid or list of ellipsoids
         Ellipsoidal body represented by an instance of
         :class:`harmonica.TriaxialEllipsoid`, :class:`harmonica.ProlateEllipsoid`, or
         :class:`harmonica.OblateEllipsoid`, or a list of them.
-    susceptibility : float, (3, 3) array, list of floats, or list of (3, 3) arrays
-        Magnetic susceptibility of the ellipsoid.
-        Pass a float (for a single ellipsoid), or a list of floats (one for each
-        ellipsoid) for isotropic magnetic susceptibility.
-        Pass a (3, 3) array (for a single ellipsoid), or a list of (3, 3)
-        arrays (one for each ellipsoid) as susceptibility tensors, to forward model
+    susceptibilities : float, (3, 3) array, or list, optional
+        Magnetic susceptibilities of the ellipsoids.
+        Pass a float for isotropic magnetic susceptibility, or a (3, 3) array for
         anisotropic susceptibilities.
-    external_field : (3) array
+        Pass a list of floats and/or (3, 3) arrays for multiple ellipsoids.
+        If None, no susceptibility will be assigned to the ellipsoid.
+        An ``external_field`` is required when passing ``susceptibilities``.
+    external_field : tuple of floats, optional
         The uniform magnetic field (B) as and array with values of
         (magnitude, inclination, declination). The magnitude should be in nT,
         and the angles in degrees.
+        Required if ``susceptibilities`` is not None.
     remnant_mag : (3) array or list of (3) arrays, optional
-        Remnent magnetisation vector of the ellipsoid, whose components must be in the
-        following order: `magnetizatio_e`, `magnetization_n`, `magnetization_u`.
+        Remnant magnetisation vector of the ellipsoid, whose components must be in the
+        following order: `magnetization_e`, `magnetization_n`, `magnetization_u`.
         Pass a list of (3) arrays for multiple ellipsoids.
         If None, no remanent magnetization will be assigned to the ellipsoids.
         Default is None.
@@ -80,34 +82,45 @@ def ellipsoid_magnetics(
 
     References
     ----------
-    Clark, S. A., et al. (1986), "Magnetic and gravity anomalies of a trixial
+    Clark, S. A., et al. (1986), "Magnetic and gravity anomalies of a triaxial
     ellipsoid"
     Takahashi, Y., et al. (2018), "Magentic modelling of ellipsoidal bodies"
     For derivations of the equations and methods used in this code.
     """
-    # check inputs are of the correct type
+    if susceptibilities is None and remnant_mag is None:
+        msg = (
+            "Invalid susceptibilities and remnant_mag as None."
+            "Pass values for at least one of them to forward model the magnetic field "
+            "of the ellipsoids."
+        )
+        raise TypeError(msg)
+    if susceptibilities is not None and external_field is None:
+        msg = (
+            "Invalid external_field as None. "
+            "When susceptibilities are passed, an external field should be provided."
+        )
+        raise TypeError(msg)
     if not isinstance(ellipsoids, Sequence):
         ellipsoids = [ellipsoids]
-
+    if susceptibilities is None:
+        susceptibilities = [None for _ in range(len(ellipsoids))]
     if not isinstance(susceptibilities, Sequence):
         susceptibilities = [susceptibilities]
-
+    if len(susceptibilities) != len(ellipsoids):
+        msg = ""
+        raise ValueError()
     if remnant_mag is None:
-        remnant_mag = np.zeros((len(ellipsoids), 3))
-    else:
-        remnant_mag = np.asarray(remnant_mag, dtype=float)
-
-        if remnant_mag.ndim == 1 and remnant_mag.size == 3:
-            remnant_mag = np.tile(remnant_mag, (len(ellipsoids), 1))
-
-        if remnant_mag.shape != (len(ellipsoids), 3):
-            msg = (
-                f"Remanent magnetisation must have shape "
-                f"({len(ellipsoids)}, 3); got {remnant_mag.shape}."
-            )
-            raise ValueError(msg)
-
-    if not isinstance(external_field, Sequence) and len(external_field) != 3:
+        remnant_mag = [None for _ in range(len(ellipsoids))]
+    if len(remnant_mag) != len(ellipsoids):
+        if len(remnant_mag) != 3:
+            msg = ""
+            raise ValueError()
+        remnant_mag = [remnant_mag]
+    if (
+        external_field is not None
+        and not isinstance(external_field, Sequence)
+        and len(external_field) != 3
+    ):
         msg = (
             "External field  must contain three values "
             "(magnitude, inclination, declination):"
@@ -115,13 +128,32 @@ def ellipsoid_magnetics(
         )
         raise ValueError(msg)
 
+    # TODO: move this to the for loop?
+    # if remnant_mag is None:
+    #     remnant_mag = np.zeros((len(ellipsoids), 3))
+    # else:
+    #     remnant_mag = np.asarray(remnant_mag, dtype=float)
+    #
+    #     if remnant_mag.ndim == 1 and remnant_mag.size == 3:
+    #         remnant_mag = np.tile(remnant_mag, (len(ellipsoids), 1))
+    #
+    #     if remnant_mag.shape != (len(ellipsoids), 3):
+    #         msg = (
+    #             f"Remanent magnetisation must have shape "
+    #             f"({len(ellipsoids)}, 3); got {remnant_mag.shape}."
+    #         )
+    #         raise ValueError(msg)
+
     cast = np.broadcast(*coordinates)
     easting, northing, upward = tuple(np.atleast_1d(c).ravel() for c in coordinates)
     be, bn, bu = tuple(np.zeros_like(easting) for _ in range(3))
 
-    magnitude, inclination, declination = external_field
-    b0_field = np.array(magnetic_angles_to_vec(magnitude, inclination, declination))
-    h0_field = b0_field * 1e-9 / mu_0  # convert to SI units
+    if external_field is None:
+        h0_field = None
+    else:
+        magnitude, inclination, declination = external_field
+        b0_field = np.array(magnetic_angles_to_vec(magnitude, inclination, declination))
+        h0_field = b0_field * 1e-9 / mu_0  # convert to SI units
 
     for ellipsoid, susceptibility, remanence in zip(
         ellipsoids, susceptibilities, remnant_mag, strict=True
@@ -184,12 +216,14 @@ def _single_ellipsoid_magnetic(
     # Calculate lambda for each observation point
     lambda_ = _calculate_lambda(x, y, z, ellipsoid.a, ellipsoid.b, ellipsoid.c)
 
-    # Rotate the background field into the local coordinate system
-    h0_field_rotated = r_matrix.T @ h0_field
-
     # Get magnetization of the ellipsoid
-    susceptibility_matrix = check_susceptibility(susceptibility)
-    remnant_mag_rotated = r_matrix.T @ remnant_mag
+    h0_field_rotated = r_matrix.T @ h0_field if h0_field is not None else None
+    susceptibility_matrix = (
+        check_susceptibility(susceptibility) if susceptibility is not None else None
+    )
+    remnant_mag_rotated = (
+        r_matrix.T @ np.asarray(remnant_mag) if remnant_mag is not None else None
+    )
     n_tensor_internal = get_demagnetization_tensor_internal(
         ellipsoid.a, ellipsoid.b, ellipsoid.c
     )
@@ -250,11 +284,11 @@ def get_magnetisation(a, b, c, susceptibility, h0_field, remnant_mag, n_tensor=N
     ----------
     a, b, c : floats
         Semi-axes lengths of the ellipsoid.
-    susceptibility : (3, 3) array
+    susceptibility : (3, 3) array or None
         Susceptibility tensor.
-    h0_field: array
+    h0_field: array or None
         The rotated background field (in local coordinates).
-    remnant_mag : (3) array
+    remnant_mag : (3) array or None
         Remnant magnetisation vector (in local coordinates).
     n_tensor : (3, 3) array, optional
         Demagnetization tensor inside the ellipsoid. If None, the demagnetization tensor
@@ -288,6 +322,13 @@ def get_magnetisation(a, b, c, susceptibility, h0_field, remnant_mag, n_tensor=N
         \mathbf{H}(\mathbf{r}) = \mathbf{H}_0 - \mathbf{N}(\mathbf{r})
         \mathbf{M}.
     """
+    if susceptibility is None and h0_field is None:
+        if remnant_mag is None:
+            msg = "Invalid susceptibility, h0_field and remnant_mag as None."
+            raise TypeError(msg)
+        return remnant_mag
+    if remnant_mag is None:
+        remnant_mag = np.zeros((3, 3))
     if n_tensor is None:
         n_tensor = get_demagnetization_tensor_internal(a, b, c)
     eye = np.identity(3)
