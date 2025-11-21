@@ -67,7 +67,7 @@ def is_almost_a_sphere(a: float, b: float, c: float) -> bool:
     return False
 
 
-def is_almost_a_prolate(a: float, b: float, c: float) -> bool:
+def is_almost_prolate(a: float, b: float, c: float) -> bool:
     """
     Check if a given ellipsoid approximates a prolate ellipsoid.
 
@@ -90,9 +90,7 @@ def is_almost_a_prolate(a: float, b: float, c: float) -> bool:
         return True
 
     # Triaxial that approximates a prolate
-    # Prolate or oblate that is almost a sphere
     if a > b and np.abs(b - c) < SEMIAXES_RTOL * max(b, c):  # noqa: SIM103
-        print("approximating the triaxial by a prolate")
         return True
 
     return False
@@ -229,7 +227,7 @@ def get_elliptical_integrals(
     Expressions of the elliptic integrals vary for each type of ellipsoid (triaxial,
     oblate and prolate).
     """
-    if is_almost_a_prolate(a, b, c):
+    if is_almost_prolate(a, b, c):
         g1, g2, g3 = _get_elliptical_integrals_prolate(a, b, lambda_)
     elif a > b > c:
         g1, g2, g3 = _get_elliptical_integrals_triaxial(a, b, c, lambda_)
