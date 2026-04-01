@@ -48,7 +48,8 @@ dependencies = [
 "Source Code" = "https://github.com/fatiando/harmonica"
 
 [project.optional-dependencies]
-visualizations = ["pyvista>=0.27", "vtk>=9"]
+pyvista = ["pyvista>=0.27", "vtk>=9"]
+plotly = ["plotly"]
 numba_progress = ["numba_progress"]
 
 [build-system]

@@ -35,6 +35,7 @@ dependencies:
   - matplotlib
   - pyvista
   - vtk==9.4.*
+  - plotly
   - pygmt
   - gmt
   - gdal

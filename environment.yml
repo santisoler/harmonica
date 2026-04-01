@@ -22,6 +22,7 @@ dependencies:
   - pyvista
   - vtk
   - numba-progress
+  - plotly
   # Testing requirements
   - pytest
   - pytest-cov
