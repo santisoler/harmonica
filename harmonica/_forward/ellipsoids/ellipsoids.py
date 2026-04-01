@@ -21,6 +21,11 @@ try:
 except ImportError:  # pragma: no cover
     pyvista = None
 
+try:
+    import plotly
+except ImportError:  # pragma: no cover
+    plotly = None
+
 
 class Ellipsoid:
     """
@@ -325,3 +330,53 @@ class Ellipsoid:
         ellipsoid.rotate(rotation=self.rotation_matrix, inplace=True)
         ellipsoid.translate(self.center, inplace=True)
         return ellipsoid
+
+    def to_plotly(self, **kwargs):
+        """
+        Export ellipsoid to a :class:`plotly.graph_objects.Surface` object.
+
+        .. important::
+
+            The :mod:`plotly` optional dependency must be installed to use this method.
+
+        Parameters
+        ----------
+        kwargs : dict
+            Keyword arguments passed to :class:`plotly.graph_objects.Surface`.
+
+        Returns
+        -------
+        ellipsoid : :plotly.graph_objects.Surface
+            A plotly parametric ellipsoid.
+        """
+        if plotly is None:
+            msg = (
+                "Missing optional dependency 'plotly' required for "
+                "exporting ellipsoids to plotly."
+            )
+            raise ImportError(msg)
+        surface = self._get_surface()
+        return plotly.graph_objects.Surface(
+            x=surface[0], y=surface[1], z=surface[2], **kwargs
+        )
+
+    def _get_surface(self, resolution=51):
+        lon = np.deg2rad(np.linspace(0.0, 360.0, resolution))
+        lat = np.deg2rad(np.linspace(-90.0, 90.0, resolution // 2))
+        lon, lat = np.meshgrid(lon, lat)
+        shape = lon.shape
+
+        x = self.a * np.cos(lon) * np.cos(lat)
+        y = self.b * np.sin(lon) * np.cos(lat)
+        z = self.c * np.sin(lat)
+
+        r = np.vstack(tuple(c.ravel() for c in (x, y, z)))
+        easting, northing, upward = tuple(
+            c.reshape(shape) for c in self.rotation_matrix @ r
+        )
+        easting_0, northing_0, upward_0 = self.center
+        easting += easting_0
+        northing += northing_0
+        upward += upward_0
+
+        return easting, northing, upward
